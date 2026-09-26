@@ -1,0 +1,16 @@
+---
+# role: samba_ad_sysvol
+# file: vars/main.yml
+
+__samba_ad_sysvol_private_dir: /var/lib/samba/private
+__samba_ad_sysvol_dir: /var/lib/samba/sysvol
+__samba_ad_sysvol_senders:
+  Debian:
+    packages: [rsync]
+    command: /usr/bin/rrsync
+  RedHat:
+    packages: [rsync, rsync-rrsync]
+    command: /usr/bin/rrsync
+  Suse:
+    packages: [rsync, python3]
+    command: /usr/bin/python3 /usr/share/doc/packages/rsync/support/rrsync

@@ -1,0 +1,6 @@
+---
+# role: samba_ad_sysvol
+# file: vars/RedHat.yml
+
+__samba_ad_sysvol_packages: [rsync, openssh-clients, ldb-tools]
+__samba_ad_sysvol_service: samba

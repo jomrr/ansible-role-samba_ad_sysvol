@@ -1,0 +1,16 @@
+---
+# role: samba_ad_sysvol
+# file: meta/main.yml
+
+galaxy_info:
+  author: Jonas Mauer
+  description: Ansible role for pulling SYSVOL between existing Samba AD domain controllers.
+  galaxy_tags:
+    - samba
+    - activedirectory
+    - sysvol
+  issue_tracker_url: https://github.com/jomrr/ansible-role-samba_ad_sysvol/issues
+  license: MIT
+  min_ansible_version: "2.20"
+  namespace: jomrr
+  role_name: samba_ad_sysvol

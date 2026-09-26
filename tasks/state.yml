@@ -1,0 +1,22 @@
+---
+# role: samba_ad_sysvol
+# file: tasks/state.yml
+
+- name: SAMBA_AD_SYSVOL | Locate the managed SYSVOL synchronization configuration
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: /etc/samba/sysvol-pull/managed.json
+  register: __samba_ad_sysvol_config
+
+- name: SAMBA_AD_SYSVOL | Read the previous source and SELinux settings
+  become: true
+  become_user: root
+  ansible.builtin.slurp:
+    src: /etc/samba/sysvol-pull/managed.json
+  register: __samba_ad_sysvol_saved
+  when: __samba_ad_sysvol_config.stat.exists
+
+- name: SAMBA_AD_SYSVOL | Retain the previous configuration for source changes and removal
+  ansible.builtin.set_fact:
+    __samba_ad_sysvol_previous: "{{ (__samba_ad_sysvol_saved.content | b64decode | from_json) if __samba_ad_sysvol_config.stat.exists else {} }}"

@@ -1,0 +1,25 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/resources/playbooks/verify.yml
+
+- name: SAMBA_AD_SYSVOL | Verify default SYSVOL permissions on both DCs
+  hosts: all
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Check the actual SYSVOL ACLs
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: check
+
+- name: SAMBA_AD_SYSVOL | Verify quiet unchanged transfers
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: false
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Repeat pulls without changing ACLs or audit logs
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: noop

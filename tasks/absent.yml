@@ -1,0 +1,37 @@
+---
+# role: samba_ad_sysvol
+# file: tasks/absent.yml
+
+- name: SAMBA_AD_SYSVOL | Stop SYSVOL synchronization and revoke its source key
+  ansible.builtin.include_tasks: revoke.yml
+
+- name: SAMBA_AD_SYSVOL | Restore the original SELinux booleans
+  become: true
+  become_user: root
+  ansible.posix.seboolean:
+    name: "{{ __samba_ad_sysvol_boolean.key }}"
+    state: "{{ __samba_ad_sysvol_boolean.value == 'on' }}"
+    persistent: true
+  loop: "{{ __samba_ad_sysvol_previous.selinux | dict2items }}"
+  loop_control:
+    loop_var: __samba_ad_sysvol_boolean
+    label: "{{ __samba_ad_sysvol_boolean.key }}"
+
+- name: SAMBA_AD_SYSVOL | Remove managed SYSVOL synchronization files
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __samba_ad_sysvol_path }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/samba-sysvol-pull.timer
+    - /etc/systemd/system/samba-sysvol-pull.service
+    - /usr/local/libexec/samba-sysvol-pull
+    - /etc/samba/sysvol-pull
+    - /var/lib/samba-sysvol-pull
+  loop_control:
+    loop_var: __samba_ad_sysvol_path
+  notify: reload sysvol units
+
+- name: SAMBA_AD_SYSVOL | Unload removed SYSVOL units
+  ansible.builtin.meta: flush_handlers

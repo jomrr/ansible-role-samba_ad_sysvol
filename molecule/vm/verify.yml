@@ -1,0 +1,9 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/vm/verify.yml
+
+- name: SAMBA_AD_SYSVOL | Run the shared domain controller verification
+  ansible.builtin.import_playbook: ../resources/playbooks/verify.yml
+
+- name: SAMBA_AD_SYSVOL | Verify the SELinux configuration and audit
+  ansible.builtin.import_playbook: selinux.yml

@@ -1,0 +1,39 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/vm/prepare.yml
+
+- name: SAMBA_AD_SYSVOL | Prepare SELinux VM prerequisites
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: SAMBA_AD_SYSVOL | Set the VM domain controller hostname
+      become: true
+      become_user: root
+      ansible.builtin.hostname:
+        name: "{{ samba_ad_dc_hostname }}.{{ samba_ad_dc_realm | lower }}"
+
+    - name: SAMBA_AD_SYSVOL | Install SELinux inspection tools and auditing
+      become: true
+      become_user: root
+      ansible.builtin.package:
+        name: [audit, policycoreutils-python-utils, python3-libselinux]
+        state: present
+
+    - name: SAMBA_AD_SYSVOL | Enable host auditing in the VM
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: auditd
+        enabled: true
+        state: started
+
+    - name: SAMBA_AD_SYSVOL | Require SELinux Enforcing in the VM fixture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.selinux.status == 'enabled'
+          - ansible_facts.selinux.mode == 'enforcing'
+          - ansible_facts.selinux.config_mode == 'enforcing'
+        fail_msg: The VM image must boot with SELinux Enforcing.
+
+- name: SAMBA_AD_SYSVOL | Prepare the shared domain controller fixture
+  ansible.builtin.import_playbook: ../resources/playbooks/prepare.yml

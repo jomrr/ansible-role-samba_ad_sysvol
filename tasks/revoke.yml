@@ -1,0 +1,25 @@
+---
+# role: samba_ad_sysvol
+# file: tasks/revoke.yml
+
+- name: SAMBA_AD_SYSVOL | Stop the previous SYSVOL timer and transfer
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: "{{ __samba_ad_sysvol_unit }}"
+    state: stopped
+    enabled: false
+    daemon_reload: true
+  loop: [samba-sysvol-pull.timer, samba-sysvol-pull.service]
+  loop_control:
+    loop_var: __samba_ad_sysvol_unit
+
+- name: SAMBA_AD_SYSVOL | Revoke the previous SYSVOL source authorization
+  become: true
+  become_user: root
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ __samba_ad_sysvol_previous.public_key }}"
+    state: absent
+  delegate_to: "{{ __samba_ad_sysvol_previous.source }}"
+  throttle: 1

@@ -1,0 +1,24 @@
+---
+# role: samba_ad_sysvol
+# file: tasks/main.yml
+
+- name: SAMBA_AD_SYSVOL | Validate synchronization prerequisites
+  ansible.builtin.import_tasks: assert.yml
+  when: samba_ad_sysvol_enabled
+
+- name: SAMBA_AD_SYSVOL | Install receiver tools
+  ansible.builtin.import_tasks: install.yml
+  when: samba_ad_sysvol_enabled
+
+- name: SAMBA_AD_SYSVOL | Read the previous synchronization configuration
+  ansible.builtin.import_tasks: state.yml
+
+- name: SAMBA_AD_SYSVOL | Configure synchronization
+  ansible.builtin.import_tasks: present.yml
+  when: samba_ad_sysvol_enabled
+
+- name: SAMBA_AD_SYSVOL | Remove disabled synchronization
+  ansible.builtin.import_tasks: absent.yml
+  when:
+    - not samba_ad_sysvol_enabled
+    - __samba_ad_sysvol_config.stat.exists

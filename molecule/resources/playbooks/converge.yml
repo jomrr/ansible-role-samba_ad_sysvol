@@ -1,0 +1,13 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/resources/playbooks/converge.yml
+
+- name: SAMBA_AD_SYSVOL | Gather trusted source and receiver facts
+  hosts: all
+  gather_facts: true
+
+- name: SAMBA_AD_SYSVOL | Configure only the SYSVOL receivers
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: false
+  roles:
+    - role: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"

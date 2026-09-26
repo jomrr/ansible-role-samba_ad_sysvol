@@ -1,0 +1,510 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/resources/playbooks/side_effect.yml
+
+- name: SAMBA_AD_SYSVOL | Create the GPO and security group on each source
+  hosts: samba_ad_sysvol_sources
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Read the unrelated root public key for preservation checks
+      become: true
+      become_user: root
+      ansible.builtin.slurp:
+        src: /root/molecule-unmanaged-key.pub
+      register: __samba_ad_sysvol_unmanaged_public
+
+    - name: SAMBA_AD_SYSVOL | Change the source SYSVOL fixture
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: create
+        password: '{{ samba_ad_dc_admin_password }}'
+      register: __samba_ad_sysvol_fixture
+      no_log: true
+
+- name: SAMBA_AD_SYSVOL | Verify initial content and independent local ACL mappings
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Stop the timer while exercising deterministic transfers
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-sysvol-pull.timer
+        state: stopped
+
+    - name: SAMBA_AD_SYSVOL | Replicate the GPO directory changes before checking ACLs
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - samba-tool
+          - drs
+          - replicate
+          - dc2.ad.example.test
+          - dc1.ad.example.test
+          - DC=ad,DC=example,DC=test
+          - -U
+          - Administrator
+      environment:
+        PASSWD: '{{ samba_ad_dc_admin_password }}'
+      changed_when: true
+      no_log: true
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL inspect
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: inspect
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_fixture.metadata }}'
+      register: __samba_ad_sysvol_replica
+      until: __samba_ad_sysvol_replica.ready
+      retries: 12
+      delay: 5
+
+    - name: SAMBA_AD_SYSVOL | Run the real SYSVOL pull unit
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-sysvol-pull.service
+        state: started
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL verify
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: verify
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_fixture.metadata }}'
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL noop
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: noop
+
+- name: SAMBA_AD_SYSVOL | Change only the replicated GPO security descriptor
+  hosts: samba_ad_sysvol_sources
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Change the source SYSVOL fixture
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: rights
+        password: '{{ samba_ad_dc_admin_password }}'
+      register: __samba_ad_sysvol_fixture
+      no_log: true
+
+- name: SAMBA_AD_SYSVOL | Apply an AD-only GPO permission change
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Replicate the GPO directory changes before checking ACLs
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - samba-tool
+          - drs
+          - replicate
+          - dc2.ad.example.test
+          - dc1.ad.example.test
+          - DC=ad,DC=example,DC=test
+          - -U
+          - Administrator
+      environment:
+        PASSWD: '{{ samba_ad_dc_admin_password }}'
+      changed_when: true
+      no_log: true
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL inspect
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: inspect
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_fixture.metadata }}'
+      register: __samba_ad_sysvol_replica
+      until: __samba_ad_sysvol_replica.ready
+      retries: 12
+      delay: 5
+
+    - name: SAMBA_AD_SYSVOL | Run the real SYSVOL pull unit
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-sysvol-pull.service
+        state: started
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL verify
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: verify
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_fixture.metadata }}'
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL noop
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: noop
+
+- name: SAMBA_AD_SYSVOL | Change and delete GPO files
+  hosts: samba_ad_sysvol_sources
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Change the source SYSVOL fixture
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: files
+        password: '{{ samba_ad_dc_admin_password }}'
+      register: __samba_ad_sysvol_fixture
+      no_log: true
+
+- name: SAMBA_AD_SYSVOL | Apply content changes and deletions without AD changes
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Run the real SYSVOL pull unit
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-sysvol-pull.service
+        state: started
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL verify
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: verify
+        expected: "{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_fixture.metadata | combine({'revision': 'revision-two-longer',
+          'removed': True}) }}"
+
+- name: SAMBA_AD_SYSVOL | Change only a NETLOGON file
+  hosts: samba_ad_sysvol_sources
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Change the source SYSVOL fixture
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: script
+        password: '{{ samba_ad_dc_admin_password }}'
+      register: __samba_ad_sysvol_fixture
+      no_log: true
+
+- name: SAMBA_AD_SYSVOL | Retry an unsuccessful ACL reset after a completed transfer
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Create a temporary unit override directory
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /etc/systemd/system/samba-sysvol-pull.service.d
+        state: directory
+        mode: '0755'
+
+    - name: SAMBA_AD_SYSVOL | Make only the ACL reset fail after copying NETLOGON
+      block:
+
+        - name: SAMBA_AD_SYSVOL | Make unchanged policy files temporarily read only to the service
+          become: true
+          become_user: root
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/samba-sysvol-pull.service.d/molecule-reset-failure.conf
+            mode: '0644'
+            content: "[Service]\nReadOnlyPaths=/var/lib/samba/sysvol/ad.example.test/Policies\n"
+
+        - name: SAMBA_AD_SYSVOL | Load the test override
+          become: true
+          become_user: root
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+
+        - name: SAMBA_AD_SYSVOL | Expect the reset to fail after the successful transfer
+          become: true
+          become_user: root
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - start
+              - samba-sysvol-pull.service
+          register: __samba_ad_sysvol_failed_reset
+          changed_when: true
+          failed_when: __samba_ad_sysvol_failed_reset.rc == 0
+
+        - name: SAMBA_AD_SYSVOL | Exercise SYSVOL failed
+          become: true
+          become_user: root
+          samba_ad_sysvol_test:
+            phase: failed
+      always:
+
+        - name: SAMBA_AD_SYSVOL | Remove the reset failure override
+          become: true
+          become_user: root
+          ansible.builtin.file:
+            path: /etc/systemd/system/samba-sysvol-pull.service.d/molecule-reset-failure.conf
+            state: absent
+
+        - name: SAMBA_AD_SYSVOL | Restore the actual unit definition
+          become: true
+          become_user: root
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+
+    - name: SAMBA_AD_SYSVOL | Run the real SYSVOL pull unit
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-sysvol-pull.service
+        state: started
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL verify
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: verify
+        expected: "{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_fixture.metadata | combine({'revision': 'revision-two-longer',
+          'removed': True, 'script': 'script-two-longer'}) }}"
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL noop
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: noop
+
+- name: SAMBA_AD_SYSVOL | Delete the GPO on the source
+  hosts: samba_ad_sysvol_sources
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Remember the deleted GPO identity
+      ansible.builtin.set_fact:
+        __samba_ad_sysvol_deleted_gpo: '{{ __samba_ad_sysvol_fixture.metadata }}'
+
+    - name: SAMBA_AD_SYSVOL | Change the source SYSVOL fixture
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: delete
+        password: '{{ samba_ad_dc_admin_password }}'
+      register: __samba_ad_sysvol_fixture
+      no_log: true
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL check
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: check
+
+- name: SAMBA_AD_SYSVOL | Remove the deleted GPO on the receiver
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Replicate the GPO directory changes before checking ACLs
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - samba-tool
+          - drs
+          - replicate
+          - dc2.ad.example.test
+          - dc1.ad.example.test
+          - DC=ad,DC=example,DC=test
+          - -U
+          - Administrator
+      environment:
+        PASSWD: '{{ samba_ad_dc_admin_password }}'
+      changed_when: true
+      no_log: true
+
+    - name: SAMBA_AD_SYSVOL | Run the real SYSVOL pull unit
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-sysvol-pull.service
+        state: started
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL absent
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: absent
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_deleted_gpo }}'
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL noop
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: noop
+
+- name: SAMBA_AD_SYSVOL | Handle an unreachable source without deleting local data
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Interrupt only the fixture connection to the source DC
+      block:
+
+        - name: SAMBA_AD_SYSVOL | Temporarily block the source IP inside the test instance
+          become: true
+          become_user: root
+          ansible.builtin.command:
+            argv:
+              - ip
+              - route
+              - add
+              - blackhole
+              - '{{ hostvars[__samba_ad_sysvol_test_source].ansible_facts.default_ipv4.address }}/32'
+          changed_when: true
+
+        - name: SAMBA_AD_SYSVOL | Expect the source connection to fail
+          become: true
+          become_user: root
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - start
+              - samba-sysvol-pull.service
+          register: __samba_ad_sysvol_failed_pull
+          changed_when: true
+          failed_when: __samba_ad_sysvol_failed_pull.rc == 0
+      always:
+
+        - name: SAMBA_AD_SYSVOL | Restore the source connection
+          become: true
+          become_user: root
+          ansible.builtin.command:
+            argv:
+              - ip
+              - route
+              - del
+              - blackhole
+              - '{{ hostvars[__samba_ad_sysvol_test_source].ansible_facts.default_ipv4.address }}/32'
+          changed_when: true
+
+    - name: SAMBA_AD_SYSVOL | Run the real SYSVOL pull unit
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-sysvol-pull.service
+        state: started
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL absent
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: absent
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_deleted_gpo }}'
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL noop
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: noop
+
+    - name: SAMBA_AD_SYSVOL | Read the owned key and original SELinux state before removal
+      become: true
+      become_user: root
+      ansible.builtin.slurp:
+        src: /etc/samba/sysvol-pull/managed.json
+      register: __samba_ad_sysvol_test_saved_sync
+
+    - name: SAMBA_AD_SYSVOL | Apply SYSVOL synchronization removal
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        samba_ad_sysvol_enabled: false
+
+    - name: SAMBA_AD_SYSVOL | Verify removal restored the original SELinux booleans
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: [getsebool, '{{ __samba_ad_sysvol_original_boolean.key }}']
+      loop: >-
+        {{ (__samba_ad_sysvol_test_saved_sync.content | b64decode | from_json).selinux | dict2items
+           if ansible_facts.selinux.status == 'enabled' else [] }}
+      loop_control:
+        loop_var: __samba_ad_sysvol_original_boolean
+      register: __samba_ad_sysvol_restored_boolean
+      changed_when: false
+      failed_when: >-
+        __samba_ad_sysvol_restored_boolean.stdout !=
+        __samba_ad_sysvol_original_boolean.key ~ ' --> ' ~ __samba_ad_sysvol_original_boolean.value
+      when: ansible_facts.selinux.status == 'enabled'
+
+    - name: SAMBA_AD_SYSVOL | Check that all owned synchronization files were removed
+      become: true
+      become_user: root
+      ansible.builtin.stat:
+        path: '{{ __samba_ad_sysvol_removed_path }}'
+      loop:
+        - /etc/samba/sysvol-pull
+        - /usr/local/libexec/samba-sysvol-pull
+        - /etc/systemd/system/samba-sysvol-pull.service
+        - /etc/systemd/system/samba-sysvol-pull.timer
+        - /var/lib/samba-sysvol-pull
+      loop_control:
+        loop_var: __samba_ad_sysvol_removed_path
+      register: __samba_ad_sysvol_removed_files
+
+    - name: SAMBA_AD_SYSVOL | Verify removal left the SYSVOL data intact
+      ansible.builtin.assert:
+        that:
+          - __samba_ad_sysvol_removed_files.results | selectattr('stat.exists') | list | length == 0
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL absent
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: absent
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_deleted_gpo }}'
+
+    - name: SAMBA_AD_SYSVOL | Read the remaining source authorizations
+      become: true
+      become_user: root
+      ansible.builtin.slurp:
+        src: /root/.ssh/authorized_keys
+      delegate_to: '{{ __samba_ad_sysvol_test_source }}'
+      register: __samba_ad_sysvol_remaining_keys
+
+    - name: SAMBA_AD_SYSVOL | Verify only the SYSVOL authorization was removed
+      ansible.builtin.assert:
+        that:
+          - >-
+            ((hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_unmanaged_public.content |
+              b64decode).split()[:2] | join(' ')) in (__samba_ad_sysvol_remaining_keys.content | b64decode)
+          - >-
+            (__samba_ad_sysvol_test_saved_sync.content | b64decode | from_json).public_key
+            not in (__samba_ad_sysvol_remaining_keys.content | b64decode)
+
+    - name: SAMBA_AD_SYSVOL | Apply SYSVOL synchronization enablement
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        samba_ad_sysvol_enabled: true
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL absent
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: absent
+        expected: '{{ hostvars[__samba_ad_sysvol_test_source].__samba_ad_sysvol_deleted_gpo }}'
+
+    - name: SAMBA_AD_SYSVOL | Exercise SYSVOL noop
+      become: true
+      become_user: root
+      samba_ad_sysvol_test:
+        phase: noop

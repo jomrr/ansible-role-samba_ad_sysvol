@@ -1,0 +1,180 @@
+---
+# role: samba_ad_sysvol
+# file: tasks/present.yml
+
+- name: SAMBA_AD_SYSVOL | Install the restricted SYSVOL sender
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: "{{ __samba_ad_sysvol_senders[hostvars[samba_ad_sysvol_source].ansible_facts.os_family].packages }}"
+    state: present
+  delegate_to: "{{ samba_ad_sysvol_source }}"
+  throttle: 1
+
+- name: SAMBA_AD_SYSVOL | Create the private SYSVOL client directory
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /etc/samba/sysvol-pull
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: SAMBA_AD_SYSVOL | Generate the dedicated SYSVOL SSH key
+  become: true
+  become_user: root
+  community.crypto.openssh_keypair:
+    path: /etc/samba/sysvol-pull/id_ed25519
+    type: ed25519
+    comment: "sysvol-pull@{{ inventory_hostname }}"
+    seuser: _default
+    setype: _default
+    owner: root
+    group: root
+    mode: "0600"
+  register: __samba_ad_sysvol_key
+  notify: pull sysvol
+
+- name: SAMBA_AD_SYSVOL | Revoke a replaced source or SSH key
+  ansible.builtin.include_tasks: revoke.yml
+  when:
+    - __samba_ad_sysvol_previous.source is defined
+    - >-
+      __samba_ad_sysvol_previous.source != samba_ad_sysvol_source or
+      __samba_ad_sysvol_previous.public_key != __samba_ad_sysvol_key.public_key
+
+- name: SAMBA_AD_SYSVOL | Pin the source host key from trusted inventory facts
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/samba/sysvol-pull/known_hosts
+    owner: root
+    group: root
+    mode: "0600"
+    content: >-
+      {{ hostvars[samba_ad_sysvol_source].ansible_facts.default_ipv4.address }}
+      ssh-ed25519 {{ hostvars[samba_ad_sysvol_source].ansible_facts.ssh_host_key_ed25519_public }}
+  notify: pull sysvol
+
+- name: SAMBA_AD_SYSVOL | Install SELinux boolean management tools
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: [python3-libsemanage, policycoreutils]
+    state: present
+  when: ansible_facts.selinux.status == 'enabled'
+
+- name: SAMBA_AD_SYSVOL | Read the original rsync SELinux booleans
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: [getsebool, rsync_client, rsync_full_access]
+  changed_when: false
+  check_mode: false
+  register: __samba_ad_sysvol_selinux
+  when:
+    - ansible_facts.selinux.status == 'enabled'
+    - __samba_ad_sysvol_previous.selinux is not defined
+
+- name: SAMBA_AD_SYSVOL | Create the local executable directory
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: SAMBA_AD_SYSVOL | Install the SYSVOL pull script
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: samba-sysvol-pull.j2
+    dest: /usr/local/libexec/samba-sysvol-pull
+    owner: root
+    group: root
+    mode: "0750"
+    validate: /bin/bash -n %s
+  notify: pull sysvol
+
+- name: SAMBA_AD_SYSVOL | Configure the SYSVOL pull service
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: samba-sysvol-pull.service.j2
+    dest: /etc/systemd/system/samba-sysvol-pull.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload sysvol units
+    - pull sysvol
+
+- name: SAMBA_AD_SYSVOL | Configure the SYSVOL pull timer
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: samba-sysvol-pull.timer.j2
+    dest: /etc/systemd/system/samba-sysvol-pull.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload sysvol units
+    - restart sysvol timer
+
+- name: SAMBA_AD_SYSVOL | Record owned authorization and original SELinux settings
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/samba/sysvol-pull/managed.json
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      {{ {'source': samba_ad_sysvol_source,
+          'public_key': __samba_ad_sysvol_key.public_key,
+          'selinux': __samba_ad_sysvol_previous.selinux | default(dict(
+            __samba_ad_sysvol_selinux.stdout_lines | default([]) | map('split', ' --> ')))
+         } | to_nice_json }}
+  notify: pull sysvol
+
+- name: SAMBA_AD_SYSVOL | Authorize only restricted SYSVOL reads on the source
+  become: true
+  become_user: root
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ __samba_ad_sysvol_key.public_key }}"
+    key_options: >-
+      {{ 'restrict,from="' ~ ((hostvars[inventory_hostname].ansible_facts.all_ipv4_addresses +
+           hostvars[inventory_hostname].ansible_facts.all_ipv6_addresses) | join(',')) ~
+         '",command="' ~ __samba_ad_sysvol_senders[hostvars[samba_ad_sysvol_source].ansible_facts.os_family].command ~
+         ' -ro ' ~ __samba_ad_sysvol_dir ~ '"' }}
+  delegate_to: "{{ samba_ad_sysvol_source }}"
+  throttle: 1
+  notify: pull sysvol
+
+- name: SAMBA_AD_SYSVOL | Permit SYSVOL transfers under SELinux
+  become: true
+  become_user: root
+  ansible.posix.seboolean:
+    name: "{{ __samba_ad_sysvol_boolean }}"
+    state: true
+    persistent: true
+  loop: [rsync_client, rsync_full_access]
+  loop_control:
+    loop_var: __samba_ad_sysvol_boolean
+  when: ansible_facts.selinux.status == 'enabled'
+
+- name: SAMBA_AD_SYSVOL | Complete the initial SYSVOL pull before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: SAMBA_AD_SYSVOL | Enable the SYSVOL pull timer
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: samba-sysvol-pull.timer
+    enabled: true
+    state: started

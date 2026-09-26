@@ -1,0 +1,8 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/resources/requirements.yml
+
+roles:
+  - name: samba_ad_dc
+    src: https://github.com/jomrr/ansible-role-samba_ad_dc.git
+    version: main

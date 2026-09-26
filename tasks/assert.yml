@@ -1,0 +1,24 @@
+---
+# role: samba_ad_sysvol
+# file: tasks/assert.yml
+
+- name: SAMBA_AD_SYSVOL | Require a distinct inventory source for SYSVOL synchronization
+  ansible.builtin.assert:
+    that:
+      - samba_ad_sysvol_source is defined
+      - samba_ad_sysvol_source in hostvars
+      - samba_ad_sysvol_source != inventory_hostname
+      - hostvars[samba_ad_sysvol_source].ansible_facts.ssh_host_key_ed25519_public is defined
+      - hostvars[samba_ad_sysvol_source].ansible_facts.default_ipv4.address is defined
+    fail_msg: SYSVOL synchronization needs a different inventory DC with gathered network and SSH host-key facts.
+    quiet: true
+
+- name: SAMBA_AD_SYSVOL | Read the configured Samba realm
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: [/usr/bin/testparm, --suppress-prompt, --parameter-name=realm]
+  register: __samba_ad_sysvol_realm
+  changed_when: false
+  check_mode: false
+  failed_when: __samba_ad_sysvol_realm.rc != 0 or __samba_ad_sysvol_realm.stdout | length == 0

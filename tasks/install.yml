@@ -1,0 +1,18 @@
+---
+# role: samba_ad_sysvol
+# file: tasks/install.yml
+
+- name: SAMBA_AD_SYSVOL | Load platform settings
+  ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', __samba_ad_sysvol_platform_files) }}"
+  vars:
+    __samba_ad_sysvol_platform_files:
+      files:
+        - "{{ ansible_facts.os_family }}.yml"
+      paths: ["{{ role_path }}/vars"]
+
+- name: SAMBA_AD_SYSVOL | Install receiver packages
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: "{{ __samba_ad_sysvol_packages }}"
+    state: present

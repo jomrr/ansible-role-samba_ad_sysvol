@@ -1,0 +1,68 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/vm/selinux.yml
+
+- name: SAMBA_AD_SYSVOL | Verify SELinux on the domain controller VM
+  hosts: all
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Verify SELinux remains Enforcing
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.selinux.status == 'enabled'
+          - ansible_facts.selinux.mode == 'enforcing'
+          - ansible_facts.selinux.config_mode == 'enforcing'
+        quiet: true
+
+    - name: SAMBA_AD_SYSVOL | Verify SYSVOL and directory database file contexts
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - matchpathcon
+          - -V
+          - /var/lib/samba/private/sam.ldb
+          - /var/lib/samba/sysvol
+      changed_when: false
+
+    - name: SAMBA_AD_SYSVOL | Verify SYSVOL synchronization file contexts
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - matchpathcon
+          - -V
+          - /usr/local/libexec/samba-sysvol-pull
+          - /etc/samba/sysvol-pull/id_ed25519
+          - /etc/samba/sysvol-pull/known_hosts
+          - /var/lib/samba-sysvol-pull/gpo-usn
+      changed_when: false
+      when: "'samba_ad_sysvol_joiners' in group_names"
+
+    - name: SAMBA_AD_SYSVOL | Reject Samba SELinux access denials since VM boot
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - ausearch
+          - --message
+          - AVC,USER_AVC
+          - --start
+          - boot
+          - --executable
+          - '{{ __samba_ad_sysvol_test_executable }}'
+          - --raw
+      loop:
+        - /usr/sbin/samba
+        - /usr/sbin/smbd
+        - /usr/sbin/winbindd
+        - /usr/bin/rsync
+        - /usr/bin/ssh
+        - /usr/bin/bash
+        - /usr/bin/ldbsearch
+      loop_control:
+        loop_var: __samba_ad_sysvol_test_executable
+      register: __samba_ad_sysvol_selinux_denials
+      changed_when: false
+      failed_when: __samba_ad_sysvol_selinux_denials.rc != 1

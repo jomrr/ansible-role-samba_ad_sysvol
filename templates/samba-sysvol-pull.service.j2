@@ -1,0 +1,28 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+[Unit]
+Description=Pull SYSVOL from {{ samba_ad_sysvol_source }}
+Wants=network-online.target
+After=network-online.target {{ __samba_ad_sysvol_service }}.service
+ConditionPathIsDirectory={{ __samba_ad_sysvol_dir }}/{{ __samba_ad_sysvol_realm.stdout | lower }}
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/samba-sysvol-pull
+StateDirectory=samba-sysvol-pull
+StateDirectoryMode=0700
+TimeoutStartSec=15min
+Nice=10
+IOSchedulingClass=idle
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=~@mount

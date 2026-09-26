@@ -1,0 +1,9 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/vm/side_effect.yml
+
+- name: SAMBA_AD_SYSVOL | Exercise changes under SELinux Enforcing
+  ansible.builtin.import_playbook: ../resources/playbooks/side_effect.yml
+
+- name: SAMBA_AD_SYSVOL | Verify SELinux after transfers and lifecycle changes
+  ansible.builtin.import_playbook: selinux.yml

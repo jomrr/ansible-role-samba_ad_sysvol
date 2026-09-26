@@ -1,0 +1,26 @@
+---
+# role: samba_ad_sysvol
+# file: handlers/main.yml
+
+- name: SAMBA_AD_SYSVOL | Reload SYSVOL unit definitions
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  listen: reload sysvol units
+
+- name: SAMBA_AD_SYSVOL | Pull SYSVOL after configuration changes
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: samba-sysvol-pull.service
+    state: started
+  listen: pull sysvol
+
+- name: SAMBA_AD_SYSVOL | Restart the SYSVOL pull timer
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: samba-sysvol-pull.timer
+    state: restarted
+  listen: restart sysvol timer

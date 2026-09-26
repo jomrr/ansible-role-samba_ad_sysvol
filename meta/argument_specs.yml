@@ -1,0 +1,18 @@
+---
+# role: samba_ad_sysvol
+# file: meta/argument_specs.yml
+
+argument_specs:
+  main:
+    short_description: Pull SYSVOL over restricted SSH and reconstruct ACLs with local
+      ID mappings.
+    options:
+      samba_ad_sysvol_enabled:
+        type: bool
+        default: true
+        description: Configure synchronization; false removes this role's service, keys
+          and saved state.
+      samba_ad_sysvol_source:
+        type: str
+        description: Inventory hostname of the source DC with gathered facts; required when
+          synchronization is enabled.

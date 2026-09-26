@@ -1,0 +1,11 @@
+---
+# role: samba_ad_sysvol
+# file: defaults/main.yml
+
+# Configure SYSVOL synchronization; false removes this role's synchronization resources.
+samba_ad_sysvol_enabled: true
+# Example: samba_ad_sysvol_enabled: false
+
+# Inventory hostname of the source DC; required when synchronization is enabled.
+# samba_ad_sysvol_source:
+# Example: samba_ad_sysvol_source: dc1

@@ -1,0 +1,89 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/vm/molecule.yml
+
+dependency:
+  name: "galaxy"
+  options:
+    requirements-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
+    role-file: "${SAMBA_AD_SYSVOL_ROLE_REQUIREMENTS:-molecule/resources/requirements.yml}"
+driver:
+  name: "vagrant"
+  provider:
+    name: "libvirt"
+provisioner:
+  name: "ansible"
+  config_options:
+    defaults:
+      forks: 8
+      interpreter_python: "auto_silent"
+      allow_world_readable_tmpfiles: true
+      callbacks_enabled: "ansible.builtin.default"
+      callback_result_format: "yaml"
+      remote_tmp: "~/.ansible/tmp"
+    ssh_connection:
+      pipelining: true
+  log: true
+  playbooks:
+    prepare: "../vm/prepare.yml"
+    converge: "../resources/playbooks/converge.yml"
+    verify: "../vm/verify.yml"
+    side_effect: "../vm/side_effect.yml"
+  inventory:
+    group_vars:
+      all:
+        __samba_ad_sysvol_test_rootless: false
+        samba_ad_dc_realm: "AD.EXAMPLE.TEST"
+        samba_ad_dc_domain: "EXAMPLE"
+        samba_ad_dc_hostname: "dc1"
+        samba_ad_dc_admin_password: "Molecule-Only-Adm1n!"
+        samba_ad_dc_rpc_dynamic_port_range: "50000-55000"
+      samba_ad_sysvol_joiners:
+        samba_ad_dc_mode: "join"
+        samba_ad_dc_hostname: "dc2"
+        samba_ad_dc_join_server: "dc1.ad.example.test"
+        __samba_ad_sysvol_test_source: "{{ inventory_hostname.removesuffix('-join') }}"
+        samba_ad_sysvol_source: "{{ __samba_ad_sysvol_test_source }}"
+verifier:
+  name: "ansible"
+scenario:
+  test_sequence:
+    - "dependency"
+    - "destroy"
+    - "syntax"
+    - "create"
+    - "prepare"
+    - "converge"
+    - "idempotence"
+    - "check"
+    - "verify"
+    - "side_effect"
+    - "destroy"
+  name: "vm"
+platforms:
+  - name: "samba-ad-sysvol-vm-fedora"
+    groups:
+      - "samba_ad_sysvol_sources"
+    box: "samba-ad-dc-fedora-44"
+    provider_options:
+      storage_pool_name: "${SAMBA_AD_SYSVOL_VM_STORAGE_POOL:-default}"
+    box_url: "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-44-1.7.x86_64.vagrant.libvirt.box"
+    box_download_checksum_type: "sha256"
+    box_download_checksum: "4695d5ef2bfcc882649b98de0c545d04671d2064f6609e7e68e606718c8333dc"
+    memory: 2048
+    cpus: 2
+    config_options:
+      synced_folder: false
+  - name: "samba-ad-sysvol-vm-fedora-join"
+    groups:
+      - "samba_ad_sysvol_joiners"
+    box: "samba-ad-dc-fedora-44"
+    provider_options:
+      storage_pool_name: "${SAMBA_AD_SYSVOL_VM_STORAGE_POOL:-default}"
+    box_url: "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-44-1.7.x86_64.vagrant.libvirt.box"
+    box_download_checksum_type: "sha256"
+    box_download_checksum: "4695d5ef2bfcc882649b98de0c545d04671d2064f6609e7e68e606718c8333dc"
+    memory: 2048
+    cpus: 2
+    config_options:
+      synced_folder: false

@@ -1,0 +1,29 @@
+#!/bin/bash
+# Managed by ansible.
+# file: {{ template_destpath }}
+# Copy content and reconstruct Windows ACLs with this DC's local ID mappings.
+set -euo pipefail
+
+realm={{ __samba_ad_sysvol_realm.stdout | lower | quote }}
+base={{ ('CN=Policies,CN=System,DC=' ~ (__samba_ad_sysvol_realm.stdout | lower).split('.') | join(',DC=')) | quote }}
+state="${STATE_DIRECTORY}/gpo-usn"
+previous=''
+if [[ -f "$state" ]]; then
+    previous=$(cat "$state")
+fi
+# An interrupted transfer or reset must be retried even without another change.
+rm -f "$state"
+
+changes=$(/usr/bin/rsync --recursive --links --times --delete-after --timeout=300 \
+    --out-format='%i %n' \
+    --rsh='/usr/bin/ssh -i /etc/samba/sysvol-pull/id_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/samba/sysvol-pull/known_hosts -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4' \
+    "root@{{ hostvars[samba_ad_sysvol_source].ansible_facts.default_ipv4.address }}:./${realm}/" \
+    "{{ __samba_ad_sysvol_dir }}/${realm}/")
+
+usn=$(/usr/bin/ldbsearch --sorted -H {{ (__samba_ad_sysvol_private_dir ~ '/sam.ldb') | quote }} \
+    -b "$base" -s one '(objectClass=groupPolicyContainer)' uSNChanged | sha256sum)
+
+if [[ -n "$changes" || "$usn" != "$previous" ]]; then
+    /usr/bin/samba-tool ntacl sysvolreset
+fi
+printf '%s\n' "$usn" > "$state"

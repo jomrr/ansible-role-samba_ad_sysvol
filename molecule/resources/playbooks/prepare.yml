@@ -1,0 +1,217 @@
+---
+# role: samba_ad_sysvol
+# file: molecule/resources/playbooks/prepare.yml
+
+- name: SAMBA_AD_SYSVOL | Prepare dedicated domain controller test instances
+  hosts: all
+  gather_facts: true
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Refresh Debian package metadata
+      become: true
+      become_user: root
+      ansible.builtin.apt:
+        update_cache: true
+      when: ansible_facts.pkg_mgr == 'apt'
+
+    - name: SAMBA_AD_SYSVOL | Keep the packaged rrsync helper in the openSUSE fixture
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /usr/etc/zypp/zypp.conf.d/excludedocs.conf
+        state: absent
+      when: ansible_facts.os_family == 'Suse'
+
+    - name: SAMBA_AD_SYSVOL | Install the domain controller fixture packages
+      ansible.builtin.include_role:
+        name: samba_ad_dc
+        tasks_from: install
+        public: true
+
+    - name: SAMBA_AD_SYSVOL | Install SYSVOL fixture tools
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        tasks_from: install
+        public: true
+
+    - name: SAMBA_AD_SYSVOL | Install SSH and restricted sender tools before isolating fixture DNS
+      become: true
+      become_user: root
+      ansible.builtin.package:
+        name: "{{ ['openssh-server'] + __samba_ad_sysvol_senders[ansible_facts.os_family].packages }}"
+        state: present
+
+    - name: SAMBA_AD_SYSVOL | Generate fixture SSH host keys
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: [ssh-keygen, -A]
+        creates: /etc/ssh/ssh_host_ed25519_key
+
+    - name: SAMBA_AD_SYSVOL | Permit public key root access in the disposable SSH fixture
+      become: true
+      become_user: root
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        create: true
+        mode: '0644'
+        insertbefore: BOF
+        marker: '# {mark} MOLECULE SYSVOL SSH'
+        block: PermitRootLogin prohibit-password
+        validate: /usr/sbin/sshd -t -f %s
+
+    - name: SAMBA_AD_SYSVOL | Start the fixture SSH server
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: "{{ 'ssh' if ansible_facts.os_family == 'Debian' else 'sshd' }}"
+        state: restarted
+        enabled: true
+
+    - name: SAMBA_AD_SYSVOL | Generate an unrelated root SSH key for preservation checks
+      become: true
+      become_user: root
+      community.crypto.openssh_keypair:
+        path: /root/molecule-unmanaged-key
+        type: ed25519
+        comment: molecule-unmanaged-root-key
+        mode: '0600'
+      register: __samba_ad_sysvol_test_unmanaged_key
+
+    - name: SAMBA_AD_SYSVOL | Authorize the unrelated fixture key
+      become: true
+      become_user: root
+      ansible.posix.authorized_key:
+        user: root
+        key: '{{ __samba_ad_sysvol_test_unmanaged_key.public_key }}'
+
+    - name: SAMBA_AD_SYSVOL | Fit provisioned identities inside the rootless UID namespace
+      become: true
+      become_user: root
+      when: __samba_ad_sysvol_test_rootless | bool or 'samba_ad_sysvol_joiners' in group_names
+      ansible.builtin.replace:
+        path: /usr/share/samba/setup/idmap_init.ldif
+        regexp: '{{ __samba_ad_sysvol_idmap_bound.regexp }}'
+        replace: '{{ __samba_ad_sysvol_idmap_bound.value }}'
+      loop:
+        - regexp: '^lowerBound: .*'
+          value: "lowerBound: {{ '20000' if 'samba_ad_sysvol_joiners' in group_names else '10000' }}"
+        - regexp: '^upperBound: .*'
+          value: 'upperBound: 60000'
+      loop_control:
+        loop_var: __samba_ad_sysvol_idmap_bound
+        label: '{{ __samba_ad_sysvol_idmap_bound.value }}'
+
+    - name: SAMBA_AD_SYSVOL | Read the unique network address assigned to the container
+      containers.podman.podman_container_info:
+        name: '{{ inventory_hostname }}'
+      delegate_to: localhost
+      register: __samba_ad_sysvol_test_container
+      when: __samba_ad_sysvol_test_rootless | bool
+
+    - name: SAMBA_AD_SYSVOL | Restore the container MAC changed by the image
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - ip
+          - link
+          - set
+          - dev
+          - '{{ ansible_facts.default_ipv4.interface }}'
+          - address
+          - '{{ __samba_ad_sysvol_test_mac }}'
+      vars:
+        __samba_ad_sysvol_test_mac: >-
+          {{ (__samba_ad_sysvol_test_container.containers[0].NetworkSettings.Networks.values() | first).MacAddress
+          }}
+      when:
+        - __samba_ad_sysvol_test_rootless | bool
+        - ansible_facts.default_ipv4.macaddress != __samba_ad_sysvol_test_mac
+      changed_when: true
+
+    - name: SAMBA_AD_SYSVOL | Resolve the DC to its test address
+      become: true
+      become_user: root
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ^\s*{{ ansible_facts.default_ipv4.address | regex_escape }}\s+
+        line: >-
+          {{ ansible_facts.default_ipv4.address }}
+          {{ samba_ad_dc_hostname }}.{{ samba_ad_dc_realm | lower }} {{ samba_ad_dc_hostname }}
+        unsafe_writes: true
+
+    - name: SAMBA_AD_SYSVOL | Discover resolver services in the test image
+      ansible.builtin.service_facts:
+
+    - name: SAMBA_AD_SYSVOL | Release DNS port 53 in the test instance
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: systemd-resolved
+        state: stopped
+        enabled: false
+        masked: true
+      when: "'systemd-resolved.service' in ansible_facts.services"
+
+    - name: SAMBA_AD_SYSVOL | Use the local AD DNS service for test clients
+      become: true
+      become_user: root
+      when: "'samba_ad_sysvol_sources' in group_names"
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+        unsafe_writes: true
+        content: |
+          nameserver 127.0.0.1
+          search ad.example.test
+
+- name: SAMBA_AD_SYSVOL | Prepare existing domain DNS and Kerberos for joining
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: false
+  tasks:
+
+    - name: SAMBA_AD_SYSVOL | Resolve the existing DC through its authoritative DNS
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+        unsafe_writes: true
+        content: |
+          nameserver {{ hostvars[__samba_ad_sysvol_test_source].ansible_facts.default_ipv4.address }}
+          search ad.example.test
+
+    - name: SAMBA_AD_SYSVOL | Configure Kerberos discovery before joining
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        dest: /etc/krb5.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |-
+          [libdefaults]
+              default_realm = {{ samba_ad_dc_realm }}
+              dns_lookup_realm = false
+              dns_lookup_kdc = true
+
+- name: SAMBA_AD_SYSVOL | Provision the source DC fixture
+  hosts: samba_ad_sysvol_sources
+  gather_facts: true
+  tasks:
+    - name: SAMBA_AD_SYSVOL | Provision the source domain controller
+      ansible.builtin.include_role:
+        name: samba_ad_dc
+
+- name: SAMBA_AD_SYSVOL | Join the receiver DC fixture
+  hosts: samba_ad_sysvol_joiners
+  gather_facts: true
+  tasks:
+    - name: SAMBA_AD_SYSVOL | Join the receiver domain controller
+      ansible.builtin.include_role:
+        name: samba_ad_dc
