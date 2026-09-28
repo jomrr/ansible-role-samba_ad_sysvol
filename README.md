@@ -17,8 +17,8 @@ from their local AD replicas.
 
 ### Managed
 
-- A five-minute SYSVOL pull timer, restricted SSH keys, pinned source host keys
-  and local ACL reconstruction.
+- A thirty-minute SYSVOL pull timer, restricted SSH keys, pinned source host
+  keys and local ACL reconstruction.
 - Removal of owned synchronization resources and restoration of changed SELinux
   booleans.
 
@@ -90,7 +90,7 @@ Supported after an initial successful application.
 ## Service Behavior
 
 Configuration changes trigger a successful pull before the timer starts.
-Subsequent pulls run every five minutes.
+Subsequent pulls run every thirty minutes.
 
 ## Security Notes
 
